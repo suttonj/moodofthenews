@@ -1,26 +1,14 @@
 #!/usr/bin/env python
 
-#	Copyright 2013 AlchemyAPI
-#
-#   Licensed under the Apache License, Version 2.0 (the "License");
-#   you may not use this file except in compliance with the License.
-#   You may obtain a copy of the License at
-#
-#       http://www.apache.org/licenses/LICENSE-2.0
-#
-#   Unless required by applicable law or agreed to in writing, software
-#   distributed under the License is distributed on an "AS IS" BASIS,
-#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#   See the License for the specific language governing permissions and
-#   limitations under the License.
+# Analyze sentiments of tweets
 
+# Based on AlchemyAPI - github.com/alchemyapi_python
 
 import sys
 import json
 import base64
 import urllib2
 import urllib
-from alchemyapi import AlchemyAPI
 
 try:
 	import config
@@ -156,7 +144,7 @@ def search(auth, query, number_of_tweets):
 def process(query, in_queue, out_queue):
 	"""
 	The worker thread to grab a found Tweet off the queue and 
-	calculate the sentiment via AlchemyAPI. 
+	calculate the sentiment.
 
 	It calculates the document-level sentiment for the entire tweet, and
 	it will also attempt to calculate entity-level sentiment if the query
@@ -172,9 +160,6 @@ def process(query, in_queue, out_queue):
 	OUTPUT:
 	None	
 	"""
-
-	#Create the AlchemyAPI object
-	alchemyapi = AlchemyAPI()
 	
 	while True:
 		#grab a tweet from the queue
@@ -184,36 +169,36 @@ def process(query, in_queue, out_queue):
 		tweet['sentiment'] = {}
 
 		try:
-			#calculate the sentiment for the entity
-			response = alchemyapi.entities('text',tweet['text'], { 'sentiment': 1 })
-			if response['status'] == 'OK':
-				for entity in response['entities']:
-					#Check if we've found an entity that matches our query
-					if entity['text'] == query:
-						tweet['sentiment']['entity'] = {}
-						tweet['sentiment']['entity']['type'] = entity['sentiment']['type']
-						
-						#Add the score (it's not returned if type=neutral)
-						if 'score' in entity['sentiment']:
-							tweet['sentiment']['entity']['score'] = entity['sentiment']['score']
-						else:
-							tweet['sentiment']['entity']['score'] = 0  
-						
-						#Only 1 entity can possibly match the query, so exit the loop
-						break
+			url = config.sentiment_api_url
+			params = { 'text': tweet['text']}
+			if tweet['text'] == None:
+				pass
+			#create the request and hit the Twitter API
+			request = urllib2.Request(url, urllib.urlencode(params))
+			response = json.loads(urllib2.urlopen(request).read())
+
+			tweet['sentiment']['label'] = response['label']
+			print '**** TEXT-PROCESSING ANALYSIS *****'
+			print tweet['sentiment']['label']
+
+			tweet['sentiment']['doc'] = {}
+			tweet['sentiment']['doc']['type'] = response['label']
+				
+			# 	#Add the score (it's not returned if type=neutral)
+			tweet['sentiment']['doc']['score'] = response['probability'][response['label']]
 
 			#calculate the sentiment for the entire tweet
-			response = alchemyapi.sentiment('text',tweet['text'])
+			# response = alchemyapi.sentiment('text',tweet['text'])
 
-			if response['status'] == 'OK':
-				tweet['sentiment']['doc'] = {}
-				tweet['sentiment']['doc']['type'] = response['docSentiment']['type']
+			# if response['status'] == 'OK':
+			# 	tweet['sentiment']['doc'] = {}
+			# 	tweet['sentiment']['doc']['type'] = response['docSentiment']['type']
 				
-				#Add the score (it's not returned if type=neutral)
-				if 'score' in response['docSentiment']:
-					tweet['sentiment']['doc']['score'] = response['docSentiment']['score']
-				else:
-					tweet['sentiment']['doc']['score'] = 0  
+			# 	#Add the score (it's not returned if type=neutral)
+			# 	if 'score' in response['docSentiment']:
+			# 		tweet['sentiment']['doc']['score'] = response['docSentiment']['score']
+			# 	else:
+			# 		tweet['sentiment']['doc']['score'] = 0  
 			
 			#add the result to the output queue
 			out_queue.put(tweet)
@@ -235,9 +220,8 @@ def analyze(tweets, query):
 	and passes it on for further processing.
 
 	The number of threads is set to CONCURRENCY_LIMIT, which is the maximum 
-	number of concurrent processes allowed by AlchemyAPI for your plan. The
-	concurrency limit is 5 for the free plan.
-
+	number of concurrent processes allowed. 
+	
 	INPUT:
 	tweets -> an array containing the tweets to analyze. 
 	query -> the query string that was used in the Twitter API search (i.e. "Denver Broncos")
@@ -357,8 +341,8 @@ def stats(tweets):
 	#init
  	data = {}
 	data['doc'] = {}
-	data['doc']['positive'] = 0
-	data['doc']['negative'] = 0
+	data['doc']['pos'] = 0
+	data['doc']['neg'] = 0
 	data['doc']['neutral'] = 0
 	data['doc']['total'] = 0
 	
@@ -394,8 +378,8 @@ def stats(tweets):
 	
 	if data['entity']['total'] > 0:
 		print 'Entity-Level Sentiment:'
-		print 'Positive: %d (%.2f%%)' % (data['entity']['positive'], 100.0*data['entity']['positive']/data['entity']['total'])
-		print 'Negative: %d (%.2f%%)' % (data['entity']['negative'], 100.0*data['entity']['negative']/data['entity']['total'])
+		print 'Positive: %d (%.2f%%)' % (data['entity']['pos'], 100.0*data['entity']['positive']/data['entity']['total'])
+		print 'Negative: %d (%.2f%%)' % (data['entity']['neg'], 100.0*data['entity']['negative']/data['entity']['total'])
 		print 'Neutral: %d (%.2f%%)' % (data['entity']['neutral'], 100.0*data['entity']['neutral']/data['entity']['total'])
 		print 'Total: %d (%.2f%%)' % (data['entity']['total'], 100.0*data['entity']['total']/data['entity']['total'])
 		print ''
@@ -403,8 +387,8 @@ def stats(tweets):
 	
 	if data['doc']['total'] > 0:
 		print 'Document-Level Sentiment:'
-		print 'Positive: %d (%.2f%%)' % (data['doc']['positive'], 100.0*data['doc']['positive']/data['doc']['total'])
-		print 'Negative: %d (%.2f%%)' % (data['doc']['negative'], 100.0*data['doc']['negative']/data['doc']['total'])
+		print 'Positive: %d (%.2f%%)' % (data['doc']['pos'], 100.0*data['doc']['pos']/data['doc']['total'])
+		print 'Negative: %d (%.2f%%)' % (data['doc']['neg'], 100.0*data['doc']['neg']/data['doc']['total'])
 		print 'Neutral: %d (%.2f%%)' % (data['doc']['neutral'], 100.0*data['doc']['neutral']/data['doc']['total'])
 		print 'Total: %d (%.2f%%)' % (data['doc']['total'], 100.0*data['doc']['total']/data['doc']['total'])
 
